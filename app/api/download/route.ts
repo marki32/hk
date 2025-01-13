@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
+import { createReadStream, unlinkSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import type { ReadStream } from 'fs'
 
 export async function POST(req: Request) {
   try {
@@ -7,65 +11,51 @@ export async function POST(req: Request) {
 
     if (!url) {
       return NextResponse.json(
-        { error: 'YouTube URL is required' },
+        { error: 'URL is required' },
         { status: 400 }
       )
     }
 
-    // Validate YouTube URL
-    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/
-    if (!youtubeRegex.test(url)) {
-      return NextResponse.json(
-        { error: 'Invalid YouTube URL' },
-        { status: 400 }
-      )
-    }
+    // Create a temp file path
+    const tempFile = join(tmpdir(), `${Date.now()}.mp4`)
 
-    // Create a TransformStream for streaming the video
-    const { readable, writable } = new TransformStream()
-
-    // Start streaming process with format that includes both video and audio
+    // Download to temp file first
     const ytDlp = spawn('yt-dlp', [
-      '--format', format_id ? `${format_id}+bestaudio[ext=m4a]` : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]',
-      '--merge-output-format', 'mp4',
-      '-o', '-',
-      url
+      url,
+      '-f', format_id || '22/best',  // Use selected format or fallback to 720p
+      '--merge-output-format', 'mp4', // Always merge to MP4
+      '-o', tempFile
     ])
 
-    // Handle potential errors
-    ytDlp.stderr.on('data', (data) => {
-      console.error(`yt-dlp error: ${data}`)
+    // Wait for download to finish
+    await new Promise((resolve, reject) => {
+      ytDlp.on('close', (code) => {
+        if (code === 0) resolve(null)
+        else reject(new Error('Download failed'))
+      })
     })
 
-    // Stream the video data
-    const writer = writable.getWriter()
-    
-    ytDlp.stdout.on('data', async (chunk) => {
+    // Create stream from temp file
+    const fileStream: ReadStream = createReadStream(tempFile)
+
+    // Set response headers
+    const headers = new Headers()
+    headers.set('Content-Type', 'video/mp4')
+    headers.set('Content-Disposition', 'attachment; filename="video.mp4"')
+
+    // Return file stream
+    const response = new Response(fileStream as unknown as ReadableStream, { headers })
+
+    // Delete temp file after streaming
+    response.clone().blob().then(() => {
       try {
-        await writer.write(chunk)
-      } catch (error) {
-        console.error('Error writing chunk:', error)
+        unlinkSync(tempFile)
+      } catch (err) {
+        console.error('Error deleting temp file:', err)
       }
     })
 
-    ytDlp.on('error', (error) => {
-      console.error('yt-dlp process error:', error)
-      writer.close()
-    })
-
-    ytDlp.stdout.on('end', () => {
-      writer.close()
-    })
-
-    // Set response headers for streaming
-    const responseHeaders = new Headers()
-    responseHeaders.set('Content-Type', 'video/mp4')
-    responseHeaders.set('Content-Disposition', 'attachment; filename="video.mp4"')
-    responseHeaders.set('Transfer-Encoding', 'chunked')
-
-    return new Response(readable, {
-      headers: responseHeaders,
-    })
+    return response
   } catch (error) {
     console.error('Download error:', error)
     return NextResponse.json(

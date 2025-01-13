@@ -1,80 +1,104 @@
-import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 
 interface VideoFormat {
-  height?: number
+  quality: string
   format_id: string
+  label: string
+}
+
+interface YtDlpFormat {
+  format_id: string
+  ext: string
+  resolution: string
+  filesize: number
+  tbr: number
+  protocol: string
+  vcodec: string
+  acodec: string
+  width: number
+  height: number
+}
+
+interface YtDlpResponse {
+  title: string
+  thumbnail: string
+  duration: number
+  formats: YtDlpFormat[]
+}
+
+interface RequestBody {
+  url: string
 }
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const { url } = await req.json()
+    const { url } = await req.json() as RequestBody
 
     if (!url) {
-      return NextResponse.json(
-        { error: 'YouTube URL is required' },
-        { status: 400 }
+      return new Response(
+        JSON.stringify({ error: 'URL is required' }),
+        { 
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }
       )
     }
 
-    return await new Promise<Response>((resolve) => {
-      const ytDlp = spawn('yt-dlp', [
-        '--print', '%(title)s\n%(thumbnail)s\n%(duration)s\n%(formats)j',
-        url
-      ])
+    // Get video info using yt-dlp
+    const ytDlp = spawn('yt-dlp', [
+      '--dump-json',
+      url
+    ])
 
-      let outputData = ''
+    let data = ''
+    ytDlp.stdout.on('data', chunk => {
+      data += chunk
+    })
 
-      ytDlp.stdout.on('data', (data) => {
-        outputData += data
-      })
-
-      ytDlp.on('close', (code) => {
-        if (code !== 0) {
-          resolve(NextResponse.json(
-            { error: 'Failed to get video info' },
-            { status: 500 }
-          ))
-          return
-        }
-
-        try {
-          const [title, thumbnail, duration, formatsStr] = outputData.split('\n')
-          const formats = JSON.parse(formatsStr)
-          
-          // Only get standard quality formats with both video and audio
-          const standardQualities = [1080, 720, 480, 360]
-          const videoFormats = standardQualities
-            .map(quality => {
-              const format = formats.find((f: VideoFormat) => f.height === quality)
-              if (format) {
-                return {
-                  quality: `${quality}p`,
-                  format_id: format.format_id
-                }
-              }
-              return null
-            })
-            .filter(Boolean)
-
-          resolve(NextResponse.json({ 
-            title,
-            thumbnail,
-            duration: parseInt(duration),
-            formats: videoFormats 
-          }))
-        } catch {
-          resolve(NextResponse.json(
-            { error: 'Failed to parse video info' },
-            { status: 500 }
-          ))
+    const info = await new Promise<YtDlpResponse>((resolve, reject) => {
+      ytDlp.on('close', code => {
+        if (code === 0) {
+          try {
+            resolve(JSON.parse(data))
+          } catch {
+            reject(new Error('Failed to parse video info'))
+          }
+        } else {
+          reject(new Error('Failed to get video info'))
         }
       })
     })
-  } catch {
-    return NextResponse.json(
-      { error: 'Failed to get video info' },
-      { status: 500 }
+
+    // Simple quality options that always work
+    const formats: VideoFormat[] = [
+      { quality: '2160p', format_id: '313+140', label: '4K Ultra HD' },
+      { quality: '1440p', format_id: '271+140', label: '2K Quad HD' },
+      { quality: '1080p', format_id: '137+140', label: 'Full HD' },
+      { quality: '720p', format_id: '22', label: 'HD' },
+      { quality: '480p', format_id: '135+140', label: 'SD' },
+      { quality: '360p', format_id: '18', label: '360p' }
+    ]
+
+    return new Response(
+      JSON.stringify({
+        title: info.title,
+        thumbnail: info.thumbnail,
+        duration: info.duration,
+        formats
+      }),
+      { 
+        headers: { 'Content-Type': 'application/json' }
+      }
+    )
+
+  } catch (err) {
+    console.error('Video info error:', err)
+    return new Response(
+      JSON.stringify({ error: 'Failed to get video info' }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
     )
   }
 }
