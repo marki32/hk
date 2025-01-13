@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { join } from 'path'
 
 interface VideoFormat {
   quality: string
@@ -44,8 +45,13 @@ export async function POST(req: Request): Promise<Response> {
       )
     }
 
+    // Get yt-dlp path based on environment
+    const ytDlpPath = process.env.NODE_ENV === 'production' 
+      ? join(process.cwd(), '.vercel/bin/yt-dlp')
+      : 'yt-dlp'
+
     // Get video info using yt-dlp
-    const ytDlp = spawn('yt-dlp', [
+    const ytDlp = spawn(ytDlpPath, [
       '--dump-json',
       url
     ])

@@ -19,8 +19,13 @@ export async function POST(req: Request) {
     // Create a temp file path
     const tempFile = join(tmpdir(), `${Date.now()}.mp4`)
 
+    // Get yt-dlp path based on environment
+    const ytDlpPath = process.env.NODE_ENV === 'production' 
+      ? join(process.cwd(), '.vercel/bin/yt-dlp')
+      : 'yt-dlp'
+
     // Download to temp file first
-    const ytDlp = spawn('yt-dlp', [
+    const ytDlp = spawn(ytDlpPath, [
       url,
       '-f', format_id || '22/best',  // Use selected format or fallback to 720p
       '--merge-output-format', 'mp4', // Always merge to MP4
