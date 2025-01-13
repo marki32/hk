@@ -1,5 +1,37 @@
 import { NextResponse } from 'next/server'
-import { spawn } from 'child_process'
+
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
+
+interface YouTubeSearchItem {
+  id: {
+    videoId: string
+  }
+  snippet: {
+    title: string
+    description: string
+    thumbnails: {
+      medium: {
+        url: string
+      }
+    }
+  }
+}
+
+interface YouTubeVideo {
+  id: string
+  title: string
+  thumbnail: string
+  description: string
+  url: string
+  duration?: number
+}
+
+interface YouTubeVideoDetails {
+  id: string
+  contentDetails: {
+    duration: string
+  }
+}
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -12,62 +44,54 @@ export async function POST(req: Request): Promise<Response> {
       )
     }
 
-    return await new Promise<Response>((resolve) => {
-      const ytDlp = spawn('yt-dlp', [
-        'ytsearch5:' + query,
-        '--print', '%(id)s\n%(title)s\n%(thumbnail)s\n%(duration)s\n%(description)s',
-        '--flat-playlist'
-      ])
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=5&q=${encodeURIComponent(
+        query
+      )}&type=video&key=${YOUTUBE_API_KEY}`
+    )
 
-      let outputData = ''
+    if (!response.ok) {
+      throw new Error('YouTube API request failed')
+    }
 
-      ytDlp.stdout.on('data', (data) => {
-        outputData += data
-      })
+    const data = await response.json()
+    const videos: YouTubeVideo[] = data.items.map((item: YouTubeSearchItem) => ({
+      id: item.id.videoId,
+      title: item.snippet.title,
+      thumbnail: item.snippet.thumbnails.medium.url,
+      description: item.snippet.description,
+      url: `https://youtube.com/watch?v=${item.id.videoId}`
+    }))
 
-      ytDlp.stderr.on('data', () => {
-        // Handle stderr if needed
-      })
+    // Get video durations in a separate request
+    const videoIds = videos.map((v: YouTubeVideo) => v.id).join(',')
+    const detailsResponse = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoIds}&key=${YOUTUBE_API_KEY}`
+    )
 
-      ytDlp.on('close', (code) => {
-        if (code !== 0) {
-          resolve(NextResponse.json(
-            { error: 'Failed to search videos' },
-            { status: 500 }
-          ))
-          return
-        }
-
-        try {
-          const lines = outputData.trim().split('\n')
-          const videos = []
+    if (detailsResponse.ok) {
+      const detailsData = await detailsResponse.json()
+      videos.forEach((video: YouTubeVideo) => {
+        const details = detailsData.items.find((item: YouTubeVideoDetails) => item.id === video.id)
+        if (details) {
+          // Convert ISO 8601 duration to seconds
+          const duration = details.contentDetails.duration
+            .replace('PT', '')
+            .replace('H', '*3600+')
+            .replace('M', '*60+')
+            .replace('S', '')
+            .split('+')
+            .filter(Boolean)
+            .reduce((acc: number, curr: string) => acc + eval(curr), 0)
           
-          for (let i = 0; i < lines.length; i += 5) {
-            if (i + 4 < lines.length) {
-              const id = lines[i]
-              const thumbnailUrl = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`
-              
-              videos.push({
-                id: id,
-                title: lines[i + 1],
-                thumbnail: thumbnailUrl,
-                duration: parseInt(lines[i + 3]),
-                description: lines[i + 4],
-                url: `https://youtube.com/watch?v=${id}`
-              })
-            }
-          }
-
-          resolve(NextResponse.json({ videos }))
-        } catch {
-          resolve(NextResponse.json(
-            { error: 'Failed to parse search results' },
-            { status: 500 }
-          ))
+          video.duration = duration
         }
       })
-    })
-  } catch {
+    }
+
+    return NextResponse.json({ videos })
+  } catch (err) {
+    console.error('Search error:', err)
     return NextResponse.json(
       { error: 'Failed to search videos' },
       { status: 500 }
