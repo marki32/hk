@@ -1,12 +1,7 @@
 {
-  "buildCommand": "npm run build",
-  "installCommand": "npm install",
+  "version": 2,
   "framework": "nextjs",
-  "build": {
-    "env": {
-      "PYTHONPATH": "/var/task"
-    }
-  },
+  "buildCommand": "bash vercel.sh && next build",
   "functions": {
     "app/api/**/*": {
       "memory": 1024,
