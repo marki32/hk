@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "build.cmd",
     "start": "next start",
-    "lint": "next lint",
-    "postinstall": "install-local.cmd"
+    "lint": "next lint"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.4",

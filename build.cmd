@@ -1,4 +1,5 @@
 @echo off
+SETLOCAL
 
 IF "%VERCEL_ENV%"=="" (
     REM Local Windows build
@@ -12,22 +13,10 @@ IF "%VERCEL_ENV%"=="" (
         echo Downloading yt-dlp...
         curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -o bin\yt-dlp.exe
     )
+
+    REM Run next build
+    next build
 ) ELSE (
-    REM Vercel build
-    echo Running Vercel build...
-
-    REM Create .vercel/bin directory
-    mkdir .vercel\bin 2>nul
-
-    REM Download yt-dlp for Linux
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o .vercel/bin/yt-dlp
-    
-    REM Make it executable
-    bash -c "chmod a+rx .vercel/bin/yt-dlp"
-
-    REM Install ffmpeg
-    apt-get update && apt-get install -y ffmpeg
+    REM On Vercel, use the shell script instead
+    bash build.sh
 )
-
-REM Run next build
-next build
