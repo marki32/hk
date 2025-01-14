@@ -33,20 +33,46 @@ export async function POST(req: Request) {
     }
 
     // Use local yt-dlp installation
-    const ytDlpPath = process.env.VERCEL
+    let ytDlpPath = process.env.VERCEL
       ? join(process.cwd(), '.vercel/bin/yt-dlp')    // On Vercel (Linux)
       : join(process.cwd(), 'bin/yt-dlp.exe')        // Local (Windows)
 
-    console.log('Using yt-dlp path:', ytDlpPath)
+    console.log('Environment:', {
+      VERCEL: process.env.VERCEL,
+      CWD: process.cwd(),
+      PATH: process.env.PATH
+    })
+    
+    console.log('Checking yt-dlp at:', ytDlpPath)
 
     // Check if yt-dlp exists
-    if (!existsSync(ytDlpPath)) {
-      console.error('yt-dlp not found at:', ytDlpPath)
+    try {
+      if (!existsSync(ytDlpPath)) {
+        console.error('yt-dlp not found at:', ytDlpPath)
+        // Try finding it in PATH
+        const alternativePath = process.env.VERCEL 
+          ? '/var/task/.vercel/bin/yt-dlp'
+          : ytDlpPath
+        
+        if (existsSync(alternativePath)) {
+          console.log('Found yt-dlp at alternative path:', alternativePath)
+          ytDlpPath = alternativePath
+        } else {
+          return NextResponse.json(
+            { error: 'yt-dlp not found' },
+            { status: 500 }
+          )
+        }
+      }
+    } catch (err) {
+      console.error('Error checking yt-dlp:', err)
       return NextResponse.json(
-        { error: 'yt-dlp not installed correctly' },
+        { error: 'Error checking yt-dlp installation' },
         { status: 500 }
       )
     }
+
+    console.log('Spawning yt-dlp with path:', ytDlpPath)
 
     // Get video info using yt-dlp with format info
     const ytDlp = spawn(ytDlpPath, [
