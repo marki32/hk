@@ -4,18 +4,25 @@
 if [ "$(uname)" == "Linux" ]; then
   # Only run these commands on Linux (Vercel)
   
-  # Download yt-dlp
-  curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp
-
-  # Make it executable
-  chmod a+rx yt-dlp
-
-  # Create bin directory and move yt-dlp
+  echo "Setting up yt-dlp and ffmpeg..."
+  
+  # Create bin directory
   mkdir -p .vercel/bin
-  mv yt-dlp .vercel/bin/
-
+  
+  # Download yt-dlp
+  curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o .vercel/bin/yt-dlp
+  
+  # Make it executable
+  chmod a+rx .vercel/bin/yt-dlp
+  
   # Install ffmpeg
   apt-get update && apt-get install -y ffmpeg
+  
+  echo "yt-dlp version:"
+  .vercel/bin/yt-dlp --version
+  
+  echo "ffmpeg version:"
+  ffmpeg -version
 fi
 
 # Run next build

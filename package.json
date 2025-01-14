@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "sh build.sh",
+    "build": "build.cmd",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "install-local.cmd"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.4",

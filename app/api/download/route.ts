@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import { createReadStream, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import type { ReadStream } from 'fs'
+import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
   try {
@@ -19,29 +18,33 @@ export async function POST(req: Request) {
     // Create a temp file path
     const tempFile = join(tmpdir(), `${Date.now()}.mp4`)
 
-    // Get yt-dlp path based on environment
-    const ytDlpPath = process.env.NODE_ENV === 'production' 
-      ? join(process.cwd(), '.vercel/bin/yt-dlp')
-      : 'yt-dlp'
+    // Use local yt-dlp installation
+    const ytDlpPath = join(process.cwd(), 'bin/yt-dlp.exe')
 
-    // Download to temp file first
+    // Download using exact format ID and merge to MP4
     const ytDlp = spawn(ytDlpPath, [
       url,
-      '-f', format_id || '22/best',  // Use selected format or fallback to 720p
-      '--merge-output-format', 'mp4', // Always merge to MP4
+      '-f', format_id,  // Use exact format ID from request
+      '--merge-output-format', 'mp4',
       '-o', tempFile
     ])
 
-    // Wait for download to finish
+    // Wait for download to complete
     await new Promise((resolve, reject) => {
-      ytDlp.on('close', (code) => {
+      let errorOutput = ''
+      
+      ytDlp.stderr.on('data', chunk => {
+        errorOutput += chunk.toString()
+      })
+
+      ytDlp.on('close', code => {
         if (code === 0) resolve(null)
-        else reject(new Error('Download failed'))
+        else reject(new Error(errorOutput))
       })
     })
 
     // Create stream from temp file
-    const fileStream: ReadStream = createReadStream(tempFile)
+    const fileStream = createReadStream(tempFile)
 
     // Set response headers
     const headers = new Headers()
@@ -64,7 +67,10 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('Download error:', error)
     return NextResponse.json(
-      { error: 'Failed to download video' },
+      { 
+        error: 'Failed to download video',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }

@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { NextResponse } from 'next/server'
 import { join } from 'path'
 
 interface VideoFormat {
@@ -7,52 +8,36 @@ interface VideoFormat {
   label: string
 }
 
-interface YtDlpFormat {
-  format_id: string
-  ext: string
-  resolution: string
-  filesize: number
-  tbr: number
-  protocol: string
-  vcodec: string
-  acodec: string
-  width: number
-  height: number
-}
-
 interface YtDlpResponse {
   title: string
   thumbnail: string
   duration: number
-  formats: YtDlpFormat[]
+  formats: Array<{
+    format_id: string
+    ext: string
+    height?: number
+    acodec?: string
+  }>
 }
 
-interface RequestBody {
-  url: string
-}
-
-export async function POST(req: Request): Promise<Response> {
+export async function POST(req: Request) {
   try {
-    const { url } = await req.json() as RequestBody
+    const { url } = await req.json()
 
     if (!url) {
-      return new Response(
-        JSON.stringify({ error: 'URL is required' }),
-        { 
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        }
+      return NextResponse.json(
+        { error: 'URL is required' },
+        { status: 400 }
       )
     }
 
-    // Get yt-dlp path based on environment
-    const ytDlpPath = process.env.NODE_ENV === 'production' 
-      ? join(process.cwd(), '.vercel/bin/yt-dlp')
-      : 'yt-dlp'
+    // Use local yt-dlp installation
+    const ytDlpPath = join(process.cwd(), 'bin/yt-dlp.exe')
 
-    // Get video info using yt-dlp
+    // Get video info using yt-dlp with format info
     const ytDlp = spawn(ytDlpPath, [
       '--dump-json',
+      '--no-check-certificates',
       url
     ])
 
@@ -75,8 +60,14 @@ export async function POST(req: Request): Promise<Response> {
       })
     })
 
-    // Simple quality options that always work
-    const formats: VideoFormat[] = [
+    // Get available format IDs
+    const availableFormats = new Set(info.formats.map(f => f.format_id))
+    
+    // Check for audio format
+    const hasAudio140 = info.formats.some(f => f.format_id === '140' && f.acodec !== 'none')
+
+    // Define all possible formats
+    const allFormats: VideoFormat[] = [
       { quality: '2160p', format_id: '313+140', label: '4K Ultra HD' },
       { quality: '1440p', format_id: '271+140', label: '2K Quad HD' },
       { quality: '1080p', format_id: '137+140', label: 'Full HD' },
@@ -85,26 +76,32 @@ export async function POST(req: Request): Promise<Response> {
       { quality: '360p', format_id: '18', label: '360p' }
     ]
 
-    return new Response(
-      JSON.stringify({
-        title: info.title,
-        thumbnail: info.thumbnail,
-        duration: info.duration,
-        formats
-      }),
-      { 
-        headers: { 'Content-Type': 'application/json' }
+    // Filter to only available formats
+    const formats = allFormats.filter(format => {
+      if (format.format_id.includes('+')) {
+        // For combined formats, check both parts
+        const [video] = format.format_id.split('+')
+        return availableFormats.has(video) && hasAudio140
+      } else {
+        // For single formats like 22 or 18
+        return availableFormats.has(format.format_id)
       }
-    )
+    })
+
+    console.log('Available formats:', formats)
+
+    return NextResponse.json({
+      title: info.title,
+      thumbnail: info.thumbnail,
+      duration: info.duration,
+      formats
+    })
 
   } catch (err) {
     console.error('Video info error:', err)
-    return new Response(
-      JSON.stringify({ error: 'Failed to get video info' }),
-      { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      }
+    return NextResponse.json(
+      { error: 'Failed to get video info' },
+      { status: 500 }
     )
   }
 }
