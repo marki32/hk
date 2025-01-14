@@ -1,7 +1,7 @@
 {
-  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
   "framework": "nextjs",
-  "buildCommand": "bash vercel.sh && next build",
   "functions": {
     "app/api/**/*": {
       "memory": 1024,

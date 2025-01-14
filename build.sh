@@ -1,18 +1,22 @@
 #!/bin/bash
 
-echo "Setting up yt-dlp and ffmpeg..."
+# Make the script executable even if Windows changed line endings
+if [ "$(uname)" == "Linux" ]; then
+  # Only run these commands on Linux (Vercel)
+  
+  # Download yt-dlp
+  curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp
 
-# Create bin directory
-mkdir -p .vercel/bin
+  # Make it executable
+  chmod a+rx yt-dlp
 
-# Download yt-dlp
-curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o .vercel/bin/yt-dlp
+  # Create bin directory and move yt-dlp
+  mkdir -p .vercel/bin
+  mv yt-dlp .vercel/bin/
 
-# Make it executable
-chmod a+rx .vercel/bin/yt-dlp
+  # Install ffmpeg
+  apt-get update && apt-get install -y ffmpeg
+fi
 
-# Install ffmpeg (should be pre-installed on Vercel)
-which ffmpeg || (apt-get update && apt-get install -y ffmpeg)
-
-echo "Running next build..."
+# Run next build
 next build
