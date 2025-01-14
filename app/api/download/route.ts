@@ -15,43 +15,52 @@ export async function POST(req: Request) {
       )
     }
 
-    // Create a temp file path
+    // Create temp file path
     const tempFile = join(tmpdir(), `${Date.now()}.mp4`)
 
     // Use local yt-dlp installation
     const ytDlpPath = join(process.cwd(), 'bin/yt-dlp.exe')
 
-    // Download using exact format ID and merge to MP4
+    // Download using optimized settings
     const ytDlp = spawn(ytDlpPath, [
       url,
-      '-f', format_id,  // Use exact format ID from request
+      '-f', format_id,
       '--merge-output-format', 'mp4',
+      '--no-check-certificates',  // Skip HTTPS certificate validation
+      '--no-warnings',           // Reduce output
+      '--no-progress',          // Don't show progress
+      '--quiet',               // Even quieter
       '-o', tempFile
     ])
 
-    // Wait for download to complete
-    await new Promise((resolve, reject) => {
-      let errorOutput = ''
-      
-      ytDlp.stderr.on('data', chunk => {
-        errorOutput += chunk.toString()
-      })
+    // Wait for download with timeout
+    await Promise.race([
+      new Promise((resolve, reject) => {
+        let errorOutput = ''
+        
+        ytDlp.stderr.on('data', chunk => {
+          errorOutput += chunk.toString()
+        })
 
-      ytDlp.on('close', code => {
-        if (code === 0) resolve(null)
-        else reject(new Error(errorOutput))
-      })
-    })
+        ytDlp.on('close', code => {
+          if (code === 0) resolve(null)
+          else reject(new Error(errorOutput))
+        })
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Download timeout - video too large')), 55000)
+      )
+    ])
 
     // Create stream from temp file
     const fileStream = createReadStream(tempFile)
 
-    // Set response headers
+    // Set headers for MP4 download
     const headers = new Headers()
     headers.set('Content-Type', 'video/mp4')
     headers.set('Content-Disposition', 'attachment; filename="video.mp4"')
 
-    // Return file stream
+    // Stream file to browser
     const response = new Response(fileStream as unknown as ReadableStream, { headers })
 
     // Delete temp file after streaming
@@ -64,12 +73,16 @@ export async function POST(req: Request) {
     })
 
     return response
+
   } catch (error) {
     console.error('Download error:', error)
+    const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
       { 
         error: 'Failed to download video',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: message.includes('timeout') ? 
+          'Video is too large for direct download. Please try a lower quality.' :
+          message
       },
       { status: 500 }
     )
