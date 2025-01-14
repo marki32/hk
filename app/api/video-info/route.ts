@@ -34,13 +34,14 @@ export async function POST(req: Request) {
 
     // Use local yt-dlp installation
     let ytDlpPath = process.env.VERCEL
-      ? join(process.cwd(), '.vercel/bin/yt-dlp')    // On Vercel (Linux)
+      ? './.vercel/bin/yt-dlp'    // On Vercel (Linux)
       : join(process.cwd(), 'bin/yt-dlp.exe')        // Local (Windows)
 
     console.log('Environment:', {
       VERCEL: process.env.VERCEL,
       CWD: process.cwd(),
-      PATH: process.env.PATH
+      PATH: process.env.PATH,
+      YT_DLP: ytDlpPath
     })
     
     console.log('Checking yt-dlp at:', ytDlpPath)

@@ -1,22 +1,25 @@
 #!/bin/bash
 
-# Make the script executable even if Windows changed line endings
-if [ "$(uname)" == "Linux" ]; then
-  # Only run these commands on Linux (Vercel)
-  
-  echo "Downloading yt-dlp..."
-  
-  # Create bin directory
-  mkdir -p .vercel/bin
-  
-  # Download yt-dlp
-  curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o .vercel/bin/yt-dlp
-  
-  # Make it executable
-  chmod a+rx .vercel/bin/yt-dlp
-  
-  echo "yt-dlp installed successfully"
-fi
+echo "Starting build process..."
+
+# Create bin directory
+mkdir -p .vercel/bin
+echo "Created .vercel/bin directory"
+
+# Download yt-dlp
+echo "Downloading yt-dlp..."
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o .vercel/bin/yt-dlp
+echo "Download complete"
+
+# Make it executable with full permissions
+chmod 777 .vercel/bin/yt-dlp
+echo "Set permissions for yt-dlp"
+
+# Verify installation
+echo "Verifying yt-dlp installation..."
+ls -l .vercel/bin/yt-dlp
+./.vercel/bin/yt-dlp --version
 
 # Run next build
+echo "Starting Next.js build..."
 next build
