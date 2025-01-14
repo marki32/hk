@@ -1,6 +1,7 @@
 import { spawn } from 'child_process'
 import { NextResponse } from 'next/server'
 import { join } from 'path'
+import { existsSync } from 'fs'
 
 interface VideoFormat {
   quality: string
@@ -32,7 +33,20 @@ export async function POST(req: Request) {
     }
 
     // Use local yt-dlp installation
-    const ytDlpPath = join(process.cwd(), 'bin/yt-dlp.exe')
+    const ytDlpPath = process.env.VERCEL
+      ? join(process.cwd(), '.vercel/bin/yt-dlp')    // On Vercel (Linux)
+      : join(process.cwd(), 'bin/yt-dlp.exe')        // Local (Windows)
+
+    console.log('Using yt-dlp path:', ytDlpPath)
+
+    // Check if yt-dlp exists
+    if (!existsSync(ytDlpPath)) {
+      console.error('yt-dlp not found at:', ytDlpPath)
+      return NextResponse.json(
+        { error: 'yt-dlp not installed correctly' },
+        { status: 500 }
+      )
+    }
 
     // Get video info using yt-dlp with format info
     const ytDlp = spawn(ytDlpPath, [
@@ -42,19 +56,29 @@ export async function POST(req: Request) {
     ])
 
     let data = ''
+    let errorOutput = ''
+
     ytDlp.stdout.on('data', chunk => {
       data += chunk
     })
 
+    ytDlp.stderr.on('data', chunk => {
+      errorOutput += chunk
+      console.error('yt-dlp error:', chunk.toString())
+    })
+
     const info = await new Promise<YtDlpResponse>((resolve, reject) => {
       ytDlp.on('close', code => {
+        console.log('yt-dlp exited with code:', code)
         if (code === 0) {
           try {
             resolve(JSON.parse(data))
-          } catch {
+          } catch (err) {
+            console.error('Failed to parse JSON:', err)
             reject(new Error('Failed to parse video info'))
           }
         } else {
+          console.error('Failed with error:', errorOutput)
           reject(new Error('Failed to get video info'))
         }
       })
@@ -62,9 +86,11 @@ export async function POST(req: Request) {
 
     // Get available format IDs
     const availableFormats = new Set(info.formats.map(f => f.format_id))
+    console.log('Available formats:', Array.from(availableFormats))
     
     // Check for audio format
     const hasAudio140 = info.formats.some(f => f.format_id === '140' && f.acodec !== 'none')
+    console.log('Has audio 140:', hasAudio140)
 
     // Define all possible formats
     const allFormats: VideoFormat[] = [
@@ -79,16 +105,14 @@ export async function POST(req: Request) {
     // Filter to only available formats
     const formats = allFormats.filter(format => {
       if (format.format_id.includes('+')) {
-        // For combined formats, check both parts
         const [video] = format.format_id.split('+')
         return availableFormats.has(video) && hasAudio140
       } else {
-        // For single formats like 22 or 18
         return availableFormats.has(format.format_id)
       }
     })
 
-    console.log('Available formats:', formats)
+    console.log('Final formats:', formats)
 
     return NextResponse.json({
       title: info.title,
@@ -100,7 +124,10 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error('Video info error:', err)
     return NextResponse.json(
-      { error: 'Failed to get video info' },
+      { 
+        error: 'Failed to get video info',
+        details: err instanceof Error ? err.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }

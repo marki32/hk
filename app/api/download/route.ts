@@ -19,38 +19,31 @@ export async function POST(req: Request) {
     const tempFile = join(tmpdir(), `${Date.now()}.mp4`)
 
     // Use local yt-dlp installation
-    const ytDlpPath = join(process.cwd(), 'bin/yt-dlp.exe')
+    const ytDlpPath = process.env.VERCEL
+      ? join(process.cwd(), '.vercel/bin/yt-dlp')    // On Vercel (Linux)
+      : join(process.cwd(), 'bin/yt-dlp.exe')        // Local (Windows)
 
-    // Download using optimized settings
+    // Download using exact format ID and merge to MP4
     const ytDlp = spawn(ytDlpPath, [
       url,
       '-f', format_id,
       '--merge-output-format', 'mp4',
-      '--no-check-certificates',  // Skip HTTPS certificate validation
-      '--no-warnings',           // Reduce output
-      '--no-progress',          // Don't show progress
-      '--quiet',               // Even quieter
       '-o', tempFile
     ])
 
-    // Wait for download with timeout
-    await Promise.race([
-      new Promise((resolve, reject) => {
-        let errorOutput = ''
-        
-        ytDlp.stderr.on('data', chunk => {
-          errorOutput += chunk.toString()
-        })
+    // Wait for download to complete
+    await new Promise((resolve, reject) => {
+      let errorOutput = ''
+      
+      ytDlp.stderr.on('data', chunk => {
+        errorOutput += chunk.toString()
+      })
 
-        ytDlp.on('close', code => {
-          if (code === 0) resolve(null)
-          else reject(new Error(errorOutput))
-        })
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Download timeout - video too large')), 55000)
-      )
-    ])
+      ytDlp.on('close', code => {
+        if (code === 0) resolve(null)
+        else reject(new Error(errorOutput))
+      })
+    })
 
     // Create stream from temp file
     const fileStream = createReadStream(tempFile)
@@ -76,14 +69,8 @@ export async function POST(req: Request) {
 
   } catch (error) {
     console.error('Download error:', error)
-    const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { 
-        error: 'Failed to download video',
-        details: message.includes('timeout') ? 
-          'Video is too large for direct download. Please try a lower quality.' :
-          message
-      },
+      { error: 'Failed to download video' },
       { status: 500 }
     )
   }
